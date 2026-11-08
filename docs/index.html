@@ -145,7 +145,7 @@
     <header>
       <span class="eyebrow">NYU Stern · Building with AI · Fall 2026</span>
       <h1>Snapset</h1>
-      <p class="tagline">[Efficient (not lazy!) gymgoers who want to spend more time putting in reps and less time logging them.]</p>
+      <p class="tagline">SnapSet helps efficient (not lazy!) gymgoers spend more time putting in reps and less time logging them: snap a photo of a machine, see what you lifted last time, and log today's sets in seconds.</p>
       <div class="cta-row">
         <a class="btn" href="#live-demo" onclick="window.posthog && posthog.capture('clicked_try_product')">See the Product →</a>
         <a class="btn btn-secondary" href="#prd">Read the Living PRD</a>
@@ -157,12 +157,10 @@
     <section id="live-demo">
       <h2>Product Showcase (Prototype / Live App / 2-Min Video)</h2>
       <p>
-        <strong>Current Status:</strong> [Build 1: local prototype / Builds 2–4: local app / Build 5: cloud app]<br />
-        <strong>Demo:</strong> [Add a screenshot or GIF now; add the live cloud app URL in Build 5.]
+        <strong>Current Status:</strong> Build 1: local prototype<br />
+        <strong>Demo:</strong> The local prototype identifying a shoulder press from a photo and pulling up last session's log.
       </p>
-      <p class="meta">
-        Ask your coding agent to embed a screenshot or GIF of your local prototype for Build 1. Keep this evidence current, then add your cloud app link and two-minute video in Build 5.
-      </p>
+      <img src="images/build1-snapset.png" alt="SnapSet local prototype: a photo of a shoulder press machine identified as Shoulder Press (shoulders, triceps), last time's log of 3 sets of 12 reps at 30 lb, and a form to log today's sets, reps and weight" style="display:block; width:100%; max-width:320px; height:auto; border:1px solid var(--border); border-radius:8px;" />
     </section>
 
     <!-- LIVING PRD (Updated every week!) -->
@@ -192,7 +190,7 @@
       <div class="grid-2">
         <div class="stat-box">
           <div class="stat-label">Cumulative Build Spend</div>
-          <div class="stat-value">[Record actual spend]</div>
+          <div class="stat-value">$0.02</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Est. Cost Per User Run</div>
@@ -217,10 +215,10 @@
       <div class="log-entry">
         <h3>Build 1 · Intent.md & Throwaway Prototype (Due Nov 9)</h3>
         <ul>
-          <li><strong>What shipped:</strong> [What you actually built; link your local prototype screenshot or GIF above.]</li>
-          <li><strong>Things learned with AI:</strong> [What you learned from AI practice and Terminus Episodes 1 and 2.]</li>
-          <li><strong>What broke / changed in PRD:</strong> [Fill in]</li>
-          <li><strong>Cost & time this week:</strong> $[0.00] · [0] hours</li>
+          <li><strong>What shipped:</strong> A local web app where I snap a photo of a gym machine, an AI vision model (DeepSeek through OpenRouter) identifies the machine and muscle group, shows what I lifted last time, and lets me log sets, reps and weight. It identified the machine correctly 4 out of 4 times in testing. (<a href="#live-demo">Screenshot above</a>)</li>
+          <li><strong>Things learned with AI:</strong> Using the terminal, Git and GitHub, installing Claude Code, fixing a Windows PATH problem, keeping API keys in a .env file, and comparing AI models on cost.</li>
+          <li><strong>What broke / changed in PRD:</strong> Switched from the Claude API to a cheaper DeepSeek model via OpenRouter to keep costs low. Tried having the AI read the weight from the weight stack, but the cheap model got it wrong, so I parked that; the plan is to prefill last session's weight instead. Refocused the PRD on me as the user: bare-bones tracking that works alongside the Planet Fitness app.</li>
+          <li><strong>Cost & time this week:</strong> $0.02 · 6 hours</li>
         </ul>
       </div>
 
