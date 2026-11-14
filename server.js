@@ -5,6 +5,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 // Load secrets from .env (never committed). Built into Node 22, nothing to install.
 try {
@@ -29,24 +30,88 @@ const MACHINES = {
   "Shoulder Press": "Shoulders, triceps",
 };
 
-// ---- Storage: a JSON array of { machine, date, sets, reps, weight } ----
+// ---- Storage: a JSON array of { id, machine, date, sets, reps, weight } ----
+// Each entry is one set (sets: 1). Entries saved before Build 2 may have sets > 1
+// ("3 sets x 10 reps" in one entry); totals add them up so they still count correctly.
+
+const today = () => new Date().toLocaleDateString("en-CA"); // your local date, e.g. 2026-11-05
+
+function writeLogs(logs, file = DATA_FILE) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(logs, null, 2));
+}
 
 function readLogs(file = DATA_FILE) {
   if (!fs.existsSync(file)) return [];
-  return JSON.parse(fs.readFileSync(file, "utf8"));
+  const logs = JSON.parse(fs.readFileSync(file, "utf8"));
+  // Old entries have no id. Give them one (once) so they can be edited or deleted too.
+  if (logs.some((l) => !l.id)) {
+    for (const l of logs) l.id ||= crypto.randomUUID();
+    writeLogs(logs, file);
+  }
+  return logs;
 }
 
 function addLog(entry, file = DATA_FILE) {
   const logs = readLogs(file);
-  logs.push(entry);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(logs, null, 2));
+  const saved = { id: crypto.randomUUID(), ...entry };
+  logs.push(saved);
+  writeLogs(logs, file);
+  return saved;
+}
+
+// Change the reps/weight of one set. Returns the updated entry, or null if the id doesn't exist.
+function updateLog(id, { reps, weight }, file = DATA_FILE) {
+  const logs = readLogs(file);
+  const entry = logs.find((l) => l.id === id);
+  if (!entry) return null;
+  entry.reps = Number(reps);
+  entry.weight = Number(weight);
+  writeLogs(logs, file);
   return entry;
+}
+
+// Remove one set. Returns true if something was deleted.
+function deleteLog(id, file = DATA_FILE) {
+  const logs = readLogs(file);
+  const kept = logs.filter((l) => l.id !== id);
+  if (kept.length === logs.length) return false;
+  writeLogs(kept, file);
+  return true;
 }
 
 function lastLogFor(machine, file = DATA_FILE) {
   const matches = readLogs(file).filter((l) => l.machine === machine);
   return matches.length ? matches[matches.length - 1] : null;
+}
+
+const countSets = (entries) => entries.reduce((sum, l) => sum + (l.sets || 1), 0);
+const topWeight = (entries) => Math.max(...entries.map((l) => l.weight));
+
+// Past sessions on one machine, newest first: [{ date, sets: [entries], topWeight }]
+function historyFor(machine, logs) {
+  const byDate = new Map();
+  for (const l of logs.filter((l) => l.machine === machine)) {
+    if (!byDate.has(l.date)) byDate.set(l.date, []);
+    byDate.get(l.date).push(l);
+  }
+  return [...byDate.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : -1))
+    .map(([date, sets]) => ({ date, sets, topWeight: topWeight(sets) }));
+}
+
+// Summary for "Finish workout": machines done on `date`, total sets, and every machine where
+// today's top weight beats the top weight of your previous session on it.
+function workoutSummary(logs, date) {
+  const todays = logs.filter((l) => l.date === date);
+  const machines = [...new Set(todays.map((l) => l.machine))];
+  const increases = [];
+  for (const machine of machines) {
+    const previous = historyFor(machine, logs).find((s) => s.date < date);
+    const now = topWeight(todays.filter((l) => l.machine === machine));
+    if (previous && now > previous.topWeight) increases.push({ machine, from: previous.topWeight, to: now });
+  }
+  return { date, machines, totalSets: countSets(todays), increases };
 }
 
 // ---- AI identification (OpenRouter) ----
@@ -162,24 +227,52 @@ async function handle(req, res) {
     return sendJson(res, 200, lastLogFor(url.searchParams.get("machine")));
   }
 
-  // POST /api/log  { machine, sets, reps, weight } -> saves it with today's date
+  // GET /api/today -> every set logged today, in the order you did them
+  if (req.method === "GET" && url.pathname === "/api/today") {
+    return sendJson(res, 200, readLogs().filter((l) => l.date === today()));
+  }
+
+  // GET /api/history?machine=Leg%20Press -> past sessions on that machine, newest first
+  if (req.method === "GET" && url.pathname === "/api/history") {
+    return sendJson(res, 200, historyFor(url.searchParams.get("machine"), readLogs()));
+  }
+
+  // GET /api/summary -> today's "Finish workout" summary
+  if (req.method === "GET" && url.pathname === "/api/summary") {
+    return sendJson(res, 200, workoutSummary(readLogs(), today()));
+  }
+
+  // POST /api/log  { machine, reps, weight } -> saves ONE set with today's date
   if (req.method === "POST" && url.pathname === "/api/log") {
     try {
-      const { machine, sets, reps, weight } = JSON.parse(await readBody(req));
-      if (!MACHINES[machine] || !(sets > 0) || !(reps > 0) || !(weight >= 0)) {
-        return sendJson(res, 400, { error: "Need machine, sets, reps and weight." });
+      const { machine, reps, weight } = JSON.parse(await readBody(req));
+      if (!MACHINES[machine] || !(reps > 0) || !(weight >= 0)) {
+        return sendJson(res, 400, { error: "Need machine, reps and weight." });
       }
-      const entry = {
-        machine,
-        date: new Date().toLocaleDateString("en-CA"), // your local date, e.g. 2026-11-05
-        sets: Number(sets),
-        reps: Number(reps),
-        weight: Number(weight),
-      };
+      const entry = { machine, date: today(), sets: 1, reps: Number(reps), weight: Number(weight) };
       return sendJson(res, 201, addLog(entry));
     } catch {
       return sendJson(res, 400, { error: "Invalid request." });
     }
+  }
+
+  // PUT /api/log?id=...  { reps, weight } -> fix a set you mistyped
+  if (req.method === "PUT" && url.pathname === "/api/log") {
+    try {
+      const { reps, weight } = JSON.parse(await readBody(req));
+      if (!(reps > 0) || !(weight >= 0)) return sendJson(res, 400, { error: "Need reps and weight." });
+      const updated = updateLog(url.searchParams.get("id"), { reps, weight });
+      return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "Set not found." });
+    } catch {
+      return sendJson(res, 400, { error: "Invalid request." });
+    }
+  }
+
+  // DELETE /api/log?id=... -> remove a set logged by mistake
+  if (req.method === "DELETE" && url.pathname === "/api/log") {
+    return deleteLog(url.searchParams.get("id"))
+      ? sendJson(res, 200, { ok: true })
+      : sendJson(res, 404, { error: "Set not found." });
   }
 
   // The web page
@@ -199,4 +292,6 @@ if (require.main === module) {
   });
 }
 
-module.exports = { readLogs, addLog, lastLogFor, parseIdentification, MACHINES };
+module.exports = {
+  readLogs, addLog, updateLog, deleteLog, lastLogFor, historyFor, workoutSummary, parseIdentification, MACHINES,
+};

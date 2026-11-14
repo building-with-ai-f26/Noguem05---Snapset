@@ -5,66 +5,193 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SnapSet</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; }
-    h1 { margin-top: 0; }
-    section { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-    label { display: block; margin: 8px 0 4px; font-weight: 600; }
-    input, select, button { width: 100%; font-size: 16px; padding: 10px; box-sizing: border-box; }
-    button { background: #222; color: #fff; border: 0; border-radius: 6px; margin-top: 12px; }
-    #preview { max-width: 100%; margin-top: 8px; border-radius: 6px; }
-    #result { font-size: 18px; margin: 4px 0; }
-    .link { background: none; color: #06c; padding: 0; margin: 4px 0; width: auto; text-decoration: underline; font-size: 14px; }
-    .muted { color: #666; }
+    /* Colors in one place. Dark mode follows your phone's setting. */
+    :root {
+      --bg: #f4f2ef; --card: #ffffff; --ink: #1d1b19; --muted: #6b6560; --line: #e4e0db;
+      --accent: #e8590c; --accent-ink: #ffffff; --accent-soft: #fde8dc; --good: #2b8a3e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121110; --card: #1a1a19; --ink: #f1eeea; --muted: #a39d96; --line: #302d2a;
+        --accent: #e8590c; --accent-ink: #ffffff; --accent-soft: #3a2316; --good: #51cf66;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+    header {
+      position: sticky; top: 0; z-index: 2; padding: 12px 16px;
+      background: linear-gradient(90deg, #e8590c, #f08c00); color: #fff;
+    }
+    header h1 { margin: 0; font-size: 22px; letter-spacing: 0.5px; }
+    header p { margin: 2px 0 0; font-size: 13px; opacity: 0.9; }
+    main { max-width: 480px; margin: 0 auto; padding: 16px; }
+    section { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    label { display: block; margin: 0 0 4px; font-weight: 600; font-size: 14px; }
+    input, select, button { width: 100%; font-size: 16px; padding: 12px; border-radius: 10px; font-family: inherit; }
+    input, select { border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+    button { border: 0; cursor: pointer; }
+    .primary { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+    .secondary { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+    .big { font-size: 20px; padding: 18px; margin-top: 12px; }
+    .big:disabled { opacity: 0.45; cursor: default; }
+    .link { background: none; color: var(--accent); padding: 4px 0; width: auto; text-decoration: underline; font-size: 14px; }
+    .muted { color: var(--muted); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+
+    /* Snap */
+    #photo { display: none; }
+    .camera { display: block; text-align: center; padding: 18px; font-size: 18px; margin: 0; }
+    #preview { width: 100%; margin-top: 10px; border-radius: 12px; }
+
+    /* Machine */
+    #result { font-size: 22px; font-weight: 700; margin: 0; }
+    #muscles { margin: 2px 0 0; }
+    #lastSession { font-size: 14px; margin: 8px 0 0; }
+
+    /* Today's sets on this machine */
+    .sets { list-style: none; padding: 0; margin: 6px 0 14px; }
+    .sets button {
+      text-align: left; background: var(--bg); color: var(--ink); padding: 10px 12px; margin-bottom: 6px;
+      display: flex; justify-content: space-between; font-size: 16px;
+    }
+    .sets button span { color: var(--muted); font-size: 13px; }
+    .sets .new { animation: pop 0.5s ease-out; }
+    @keyframes pop { from { background: var(--accent-soft); transform: scale(1.03); } }
+    #editor { border: 2px solid var(--accent); border-radius: 12px; padding: 12px; margin-bottom: 14px; }
+    #status { min-height: 1.2em; margin: 8px 0 0; text-align: center; }
+
+    /* Dashboard */
+    .machine-today { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .machine-today:last-of-type { border-bottom: 0; }
+    #summary { background: var(--accent-soft); border-radius: 12px; padding: 12px; margin-top: 12px; }
+    #summary p { margin: 4px 0; }
+    .up { color: var(--good); font-weight: 700; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chips button { width: auto; padding: 8px 14px; border-radius: 999px; background: var(--bg); color: var(--ink); font-size: 14px; }
+    .chips button.on { background: var(--accent); color: var(--accent-ink); }
+    .session { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .session:last-child { border-bottom: 0; }
+
+    /* Chart */
+    .chart { position: relative; margin: 12px 0 4px; }
+    .chart svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
+    .chart .grid { stroke: var(--line); stroke-width: 1; }
+    .chart text { fill: var(--muted); font-size: 10px; }
+    .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+    .chart .dot { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+    .chart .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+    .tip {
+      position: absolute; top: 0; pointer-events: none; background: var(--ink); color: var(--bg);
+      font-size: 12px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; transform: translateX(-50%);
+    }
   </style>
 </head>
 <body>
-  <h1>SnapSet</h1>
+  <header>
+    <h1>SnapSet</h1>
+    <p>Snap the machine. Log the set. Beat last time.</p>
+  </header>
 
-  <section>
-    <label for="photo">1. Snap the machine</label>
-    <!-- capture="environment" opens the back camera on phones -->
-    <input id="photo" type="file" accept="image/*" capture="environment">
-    <img id="preview" hidden alt="Machine photo">
-  </section>
+  <main>
+    <section>
+      <!-- capture="environment" opens the back camera on phones -->
+      <label for="photo" class="camera primary">📷 Snap the machine</label>
+      <input id="photo" type="file" accept="image/*" capture="environment">
+      <img id="preview" hidden alt="Machine photo">
+    </section>
 
-  <section>
-    <strong>2. Machine</strong>
-    <p id="result" class="muted">Take a photo and SnapSet will recognize the machine.</p>
-    <button id="fix" class="link" type="button">Not right? Fix it</button>
-    <div id="picker" hidden>
-      <label for="machine">Choose the machine</label>
-      <select id="machine">
-        <option value="">-- choose --</option>
-      </select>
-    </div>
-  </section>
+    <section>
+      <h2>Machine</h2>
+      <p id="result" class="muted">Take a photo and SnapSet will recognize the machine.</p>
+      <p id="muscles" class="muted"></p>
+      <button id="fix" class="link" type="button">Not right? Fix it</button>
+      <div id="picker" hidden>
+        <label for="machine">Choose the machine</label>
+        <select id="machine">
+          <option value="">-- choose --</option>
+        </select>
+      </div>
+      <p id="lastSession" class="muted"></p>
 
-  <section>
-    <strong>3. Last time</strong>
-    <p id="last" class="muted">—</p>
-  </section>
+      <div id="logArea" hidden>
+        <h2 style="margin-top:16px">Today:</h2>
+        <ol id="todaySets" class="sets"></ol>
 
-  <section>
-    <strong>4. Log today</strong>
-    <label for="sets">Sets</label>
-    <input id="sets" type="number" min="1" inputmode="numeric">
-    <label for="reps">Reps</label>
-    <input id="reps" type="number" min="1" inputmode="numeric">
-    <label for="weight">Weight (lb)</label>
-    <input id="weight" type="number" min="0" step="0.5" inputmode="decimal">
-    <button id="log">Log</button>
-    <p id="status" class="muted"></p>
-  </section>
+        <!-- Opens when you tap a set in the list -->
+        <div id="editor" hidden>
+          <strong id="editorTitle"></strong>
+          <div class="row" style="margin-top:8px">
+            <div><label for="editReps">Reps</label><input id="editReps" type="number" min="1" inputmode="numeric"></div>
+            <div><label for="editWeight">Weight (lb)</label><input id="editWeight" type="number" min="0" step="0.5" inputmode="decimal"></div>
+          </div>
+          <div class="row3">
+            <button id="editSave" class="primary" type="button">Save</button>
+            <button id="editDelete" class="secondary" type="button">Delete</button>
+            <button id="editCancel" class="secondary" type="button">Cancel</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <div><label for="reps">Reps</label><input id="reps" type="number" min="1" inputmode="numeric"></div>
+          <div><label for="weight">Weight (lb)</label><input id="weight" type="number" min="0" step="0.5" inputmode="decimal"></div>
+        </div>
+        <button id="log" class="primary big" type="button">Log</button>
+        <p id="status" class="muted"></p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Today's workout</h2>
+      <div id="workout"><p class="muted">Nothing logged yet today.</p></div>
+      <button id="finish" class="secondary" type="button" style="margin-top:12px">🏁 Finish workout</button>
+      <div id="summary" hidden></div>
+    </section>
+
+    <section>
+      <h2>History</h2>
+      <div id="historyChips" class="chips"></div>
+      <div id="historyView"></div>
+    </section>
+  </main>
 
   <script>
     const $ = (id) => document.getElementById(id);
+    const todayStr = () => new Date().toLocaleDateString("en-CA"); // same date format as the server
+    const fmt = (s) => `${s.reps} × ${s.weight} lb`;
+    const prettyDate = (d) => new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
     let MACHINES = {};
+    let todayLogs = [];     // every set logged today (all machines)
+    let lastSession = null; // your previous session on the selected machine (not today)
+    let reference = null;   // the set the boxes were prefilled from: "Same again" repeats it
+    let editingId = null;   // the set open in the editor
+
+    async function getJson(url, options) {
+      const res = await fetch(url, options);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Something went wrong.");
+      return data;
+    }
+    const sendJson = (url, method, body) =>
+      getJson(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
     // Load the machine list from the server (one shared list)
-    fetch("/api/machines").then((r) => r.json()).then((m) => {
+    getJson("/api/machines").then((m) => {
       MACHINES = m;
-      for (const name of Object.keys(m)) $("machine").add(new Option(name, name));
+      for (const name of Object.keys(m)) {
+        $("machine").add(new Option(name, name));
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.textContent = name;
+        chip.addEventListener("click", () => showHistory(name));
+        $("historyChips").append(chip);
+      }
     });
+    loadToday();
+
+    // ---- 1. Snap ----
 
     // Shrink the photo before sending: faster upload, cheaper AI call
     function shrinkPhoto(file, maxSide = 1024) {
@@ -83,30 +210,16 @@
       });
     }
 
-    // Show which machine is selected and load its last log
-    function selectMachine(machine) {
-      $("machine").value = machine || "";
-      $("result").textContent = machine
-        ? `${machine} (${MACHINES[machine]})`
-        : "Not sure which machine this is. Please choose it below.";
-      showLast();
-    }
-
     $("photo").addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
       $("preview").src = URL.createObjectURL(file);
       $("preview").hidden = false;
       $("result").textContent = "Identifying…";
+      $("muscles").textContent = "";
       $("picker").hidden = true;
       try {
-        const res = await fetch("/api/identify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: await shrinkPhoto(file) }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
+        const data = await sendJson("/api/identify", "POST", { image: await shrinkPhoto(file) });
         selectMachine(data.machine);
         if (!data.machine) $("picker").hidden = false; // AI wasn't sure: open the picker
       } catch (err) {
@@ -118,33 +231,252 @@
     $("fix").addEventListener("click", () => { $("picker").hidden = !$("picker").hidden; });
     $("machine").addEventListener("change", () => selectMachine($("machine").value));
 
-    async function showLast() {
-      const machine = $("machine").value;
-      if (!machine) { $("last").textContent = "—"; return; }
-      const res = await fetch("/api/last?machine=" + encodeURIComponent(machine));
-      const last = await res.json();
-      $("last").textContent = last
-        ? `${last.date}: ${last.sets} sets × ${last.reps} reps @ ${last.weight} lb`
-        : "No logs yet for this machine.";
+    // ---- 2. Machine: last session, today's sets, log ----
+
+    async function selectMachine(machine) {
+      $("machine").value = machine || "";
+      $("result").textContent = machine || "Not sure which machine this is. Please choose it below.";
+      $("result").classList.toggle("muted", !machine);
+      $("muscles").textContent = machine ? MACHINES[machine] : "";
+      $("logArea").hidden = !machine;
+      $("status").textContent = "";
+      closeEditor();
+      lastSession = null;
+      $("lastSession").textContent = "";
+      if (!machine) return;
+
+      const history = await getJson("/api/history?machine=" + encodeURIComponent(machine));
+      lastSession = history.find((s) => s.date !== todayStr()) || null;
+      $("lastSession").textContent = lastSession
+        ? `Last time (${prettyDate(lastSession.date)}): ${lastSession.sets.map(fmt).join(" · ")}`
+        : "First time on this machine.";
+      renderMachineToday();
+      prefill();
     }
 
+    const setsOnMachine = () => todayLogs.filter((l) => l.machine === $("machine").value);
+
+    // Prefill with your last set today, or the last set of your previous session, or leave blank.
+    function prefill() {
+      const mine = setsOnMachine();
+      reference = mine.length ? mine[mine.length - 1] : lastSession ? lastSession.sets[lastSession.sets.length - 1] : null;
+      $("reps").value = reference ? reference.reps : "";
+      $("weight").value = reference ? reference.weight : "";
+      updateLogButton();
+    }
+
+    // The big button says exactly what it will save
+    function updateLogButton() {
+      const reps = $("reps").value, weight = $("weight").value;
+      const btn = $("log");
+      if (!(Number(reps) > 0) || weight === "" || !(Number(weight) >= 0)) {
+        btn.textContent = "Enter reps and weight";
+        btn.disabled = true;
+        return;
+      }
+      btn.disabled = false;
+      const same = reference && Number(reps) === reference.reps && Number(weight) === reference.weight;
+      btn.textContent = `${same ? "Same again" : "Log"}: ${reps} × ${weight} lb`;
+    }
+    $("reps").addEventListener("input", updateLogButton);
+    $("weight").addEventListener("input", updateLogButton);
+
     $("log").addEventListener("click", async () => {
-      const body = {
-        machine: $("machine").value,
-        sets: Number($("sets").value),
-        reps: Number($("reps").value),
-        weight: Number($("weight").value),
-      };
-      if (!body.machine) { $("status").textContent = "Take a photo or choose a machine first."; return; }
-      const res = await fetch("/api/log", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      $("status").textContent = res.ok ? "Saved!" : data.error;
-      if (res.ok) showLast();
+      const machine = $("machine").value;
+      if (!machine) return;
+      $("log").disabled = true;
+      try {
+        await sendJson("/api/log", "POST", { machine, reps: Number($("reps").value), weight: Number($("weight").value) });
+        await loadToday({ highlightLast: true });
+        $("status").textContent = `✓ Set ${setsOnMachine().length} saved`;
+        prefill();
+        refreshHistoryIfShowing(machine);
+      } catch (err) {
+        $("status").textContent = err.message;
+        updateLogButton();
+      }
     });
+
+    async function loadToday({ highlightLast = false } = {}) {
+      todayLogs = await getJson("/api/today");
+      renderMachineToday(highlightLast);
+      renderWorkout();
+    }
+
+    function renderMachineToday(highlightLast = false) {
+      const list = $("todaySets");
+      list.innerHTML = "";
+      const mine = setsOnMachine();
+      if (!mine.length) {
+        list.innerHTML = '<li class="muted">No sets yet. Your first one goes here.</li>';
+        return;
+      }
+      mine.forEach((s, i) => {
+        const li = document.createElement("li");
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.innerHTML = `<b></b><span>tap to edit</span>`;
+        btn.firstChild.textContent = `Set ${i + 1} · ${fmt(s)}` + (s.sets > 1 ? ` (${s.sets} sets)` : "");
+        btn.addEventListener("click", () => openEditor(s, i + 1));
+        if (highlightLast && i === mine.length - 1) btn.classList.add("new");
+        li.append(btn);
+        list.append(li);
+      });
+    }
+
+    // ---- Edit / delete a set ----
+
+    function openEditor(set, number) {
+      editingId = set.id;
+      $("editorTitle").textContent = `Edit set ${number}`;
+      $("editReps").value = set.reps;
+      $("editWeight").value = set.weight;
+      $("editor").hidden = false;
+    }
+    function closeEditor() { editingId = null; $("editor").hidden = true; }
+
+    async function afterEdit(message) {
+      closeEditor();
+      await loadToday();
+      prefill();
+      $("status").textContent = message;
+      refreshHistoryIfShowing($("machine").value);
+    }
+
+    $("editCancel").addEventListener("click", closeEditor);
+    $("editSave").addEventListener("click", async () => {
+      try {
+        await sendJson("/api/log?id=" + encodeURIComponent(editingId), "PUT",
+          { reps: Number($("editReps").value), weight: Number($("editWeight").value) });
+        afterEdit("✓ Set updated");
+      } catch (err) { $("status").textContent = err.message; }
+    });
+    $("editDelete").addEventListener("click", async () => {
+      try {
+        await getJson("/api/log?id=" + encodeURIComponent(editingId), { method: "DELETE" });
+        afterEdit("Set deleted");
+      } catch (err) { $("status").textContent = err.message; }
+    });
+
+    // ---- Today's workout (all machines) ----
+
+    function renderWorkout() {
+      const box = $("workout");
+      box.innerHTML = "";
+      const machines = [...new Set(todayLogs.map((l) => l.machine))];
+      if (!machines.length) { box.innerHTML = '<p class="muted">Nothing logged yet today.</p>'; return; }
+      for (const m of machines) {
+        const sets = todayLogs.filter((l) => l.machine === m);
+        const count = sets.reduce((n, s) => n + (s.sets || 1), 0);
+        const div = document.createElement("div");
+        div.className = "machine-today";
+        div.innerHTML = "<strong></strong><div class='muted'></div>";
+        div.firstChild.textContent = `${m} · ${count} set${count === 1 ? "" : "s"}`;
+        div.lastChild.textContent = sets.map(fmt).join(" · ");
+        box.append(div);
+      }
+    }
+
+    $("finish").addEventListener("click", async () => {
+      const s = await getJson("/api/summary");
+      const box = $("summary");
+      box.hidden = false;
+      if (!s.machines.length) { box.innerHTML = "<p>No sets logged today yet. Go lift something! 💪</p>"; return; }
+      const ups = s.increases.length
+        ? s.increases.map((i) => `<p class="up">▲ ${i.machine}: ${i.from} → ${i.to} lb</p>`).join("")
+        : '<p class="muted">No weight increases vs last time. Consistency counts too.</p>';
+      box.innerHTML =
+        `<p><strong>🎉 Workout done!</strong></p>` +
+        `<p>${s.machines.length} machine${s.machines.length === 1 ? "" : "s"}: ${s.machines.join(", ")}</p>` +
+        `<p>${s.totalSets} total sets</p>` + ups;
+    });
+
+    // ---- History ----
+
+    let historyMachine = null;
+
+    async function showHistory(machine) {
+      historyMachine = machine;
+      for (const chip of $("historyChips").children) chip.classList.toggle("on", chip.textContent === machine);
+      const sessions = await getJson("/api/history?machine=" + encodeURIComponent(machine));
+      const view = $("historyView");
+      view.innerHTML = "";
+      if (!sessions.length) { view.innerHTML = '<p class="muted">No sessions on this machine yet.</p>'; return; }
+
+      const title = document.createElement("p");
+      title.innerHTML = "<strong>Top weight per session (lb)</strong>";
+      title.style.margin = "14px 0 0";
+      view.append(title);
+      if (sessions.length < 2) {
+        view.insertAdjacentHTML("beforeend", '<p class="muted">Log one more session to see your trend line.</p>');
+      } else {
+        view.append(lineChart([...sessions].reverse())); // oldest → newest, left → right
+      }
+
+      for (const s of sessions) { // newest first
+        const div = document.createElement("div");
+        div.className = "session";
+        div.innerHTML = "<strong></strong><div class='muted'></div>";
+        div.firstChild.textContent = `${prettyDate(s.date)} · top ${s.topWeight} lb`;
+        div.lastChild.textContent = s.sets.map((x) => fmt(x) + (x.sets > 1 ? ` (${x.sets} sets)` : "")).join(" · ");
+        view.append(div);
+      }
+    }
+
+    function refreshHistoryIfShowing(machine) {
+      if (historyMachine === machine) showHistory(machine);
+    }
+
+    // A small hand-drawn SVG line chart: one point per session, hover/tap for details.
+    function lineChart(sessions) {
+      const W = 320, H = 170, left = 36, right = 12, top = 24, bottom = 22;
+      const weights = sessions.map((s) => s.topWeight);
+      const min = Math.min(...weights), max = Math.max(...weights);
+      const pad = Math.max(5, (max - min) * 0.15);
+      const lo = Math.max(0, Math.floor((min - pad) / 5) * 5), hi = Math.ceil((max + pad) / 5) * 5;
+      const x = (i) => left + (i * (W - left - right)) / (sessions.length - 1);
+      const y = (w) => top + ((hi - w) * (H - top - bottom)) / (hi - lo);
+
+      const ticks = [lo, Math.round((lo + hi) / 2), hi];
+      const grid = ticks.map((t) =>
+        `<line class="grid" x1="${left}" x2="${W - right}" y1="${y(t)}" y2="${y(t)}"/>` +
+        `<text x="${left - 6}" y="${y(t) + 3}" text-anchor="end">${t}</text>`).join("");
+      const short = (d) => new Date(d + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      const xLabels =
+        `<text x="${x(0)}" y="${H - 6}" text-anchor="start">${short(sessions[0].date)}</text>` +
+        `<text x="${x(sessions.length - 1)}" y="${H - 6}" text-anchor="end">${short(sessions[sessions.length - 1].date)}</text>`;
+      const points = sessions.map((s, i) => `${x(i)},${y(s.topWeight)}`).join(" ");
+      const dots = sessions.map((s, i) => `<circle class="dot" cx="${x(i)}" cy="${y(s.topWeight)}" r="4"/>`).join("");
+
+      const wrap = document.createElement("div");
+      wrap.className = "chart";
+      wrap.innerHTML =
+        `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Top weight per session, from ${min} to ${max} lb">` +
+        grid + xLabels +
+        `<line class="cross" id="cross" y1="${top}" y2="${H - bottom}" visibility="hidden"/>` +
+        `<polyline class="line" points="${points}"/>` + dots +
+        `<rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/></svg>` +
+        `<div class="tip" hidden></div>`;
+
+      // Hover or tap: snap to the nearest session and show its date + top weight
+      const svg = wrap.querySelector("svg"), tip = wrap.querySelector(".tip"), cross = wrap.querySelector("#cross");
+      function show(e) {
+        const box = svg.getBoundingClientRect();
+        const px = ((e.clientX - box.left) / box.width) * W;
+        let i = Math.round(((px - left) / (W - left - right)) * (sessions.length - 1));
+        i = Math.max(0, Math.min(sessions.length - 1, i));
+        cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
+        cross.setAttribute("visibility", "visible");
+        tip.textContent = `${short(sessions[i].date)}: ${sessions[i].topWeight} lb`;
+        tip.style.left = Math.max(40, Math.min(box.width - 40, (x(i) / W) * box.width)) + "px";
+        tip.hidden = false;
+      }
+      function hide() { tip.hidden = true; cross.setAttribute("visibility", "hidden"); }
+      svg.addEventListener("pointermove", show);
+      svg.addEventListener("pointerdown", show);
+      svg.addEventListener("pointerleave", hide);
+      return wrap;
+    }
   </script>
 </body>
 </html>
