@@ -162,10 +162,10 @@
     <section id="live-demo">
       <h2>Product Showcase (Prototype / Live App / 2-Min Video)</h2>
       <p>
-        <strong>Current Status:</strong> Build 1: local prototype<br />
-        <strong>Demo:</strong> The local prototype identifying a shoulder press from a photo and pulling up last session's log.
+        <strong>Current Status:</strong> Build 2: smallest local working version<br />
+        <strong>Demo:</strong> A real workout in the local app: three Shoulder Press sets logged with one tap each, weights prefilled from last time, today's workout across two machines, and per-machine history.
       </p>
-      <img src="images/build1-snapset.png" alt="SnapSet local prototype: a photo of a shoulder press machine identified as Shoulder Press (shoulders, triceps), last time's log of 3 sets of 12 reps at 30 lb, and a form to log today's sets, reps and weight" style="display:block; width:100%; max-width:320px; height:auto; border:1px solid var(--border); border-radius:8px;" />
+      <img src="images/build2-snapset.png" alt="SnapSet Build 2 on a phone-width screen: Shoulder Press (shoulders, triceps) with last time's 12 × 30 lb, today's sets 12 × 30, 14 × 20 and 10 × 50 lb, a big orange 'Same again: 10 × 50 lb' button, today's workout listing Chest Press and Shoulder Press with 3 sets each, a Finish workout button, and History buttons for the six machines" style="display:block; width:100%; max-width:320px; height:auto; border:1px solid var(--border); border-radius:8px;" />
     </section>
 
     <!-- LIVING PRD (Updated every week!) -->
@@ -176,11 +176,12 @@
     <h3>1. Target User & The Job to Be Done</h3>
       <p><strong>Who is this for?</strong> Personally, I'm building this for myself, my goal is to get in 3-4 quick workouts a week and want a fast, easy way to log weight training without having to do much typing. I will be testing it myself.</p>
       <p><strong>The painful "Before" workflow:</strong> Searching manually through long, confusing exercise lists in subscription-gated apps, losing track of progressive overload weights, or relying on chaotic phone notes apps between sets.</p>
-      <p><strong>The "After" workflow with this product:</strong> Taking a quick photo of the gym machine to automatically identify the equipment and target muscle group, then tapping once to log the set and move on.</p>
+      <p><strong>The "After" workflow with this product:</strong> Taking one quick photo per machine to automatically identify the equipment and target muscle group, with my last weight already filled in, then tapping "Same again" once per set and moving on.</p>
+      <p><strong>PRD v2 changes (Build 2, from pod feedback):</strong> One photo per machine, not per set. Every set after that is one tap ("Same again"), and the weight is prefilled from last time so I only type when something changes.</p>
 
       <h3>2. Scope & Explicit Non-Goals</h3>
       <ul>
-        <li><strong>In Scope (Core Workflow):</strong> User uploads a photo of a gym machine, the AI identifies the equipment and target muscle group, and the user logs their sets and reps.</li>
+        <li><strong>In Scope (Core Workflow):</strong> User takes one photo of a gym machine, the AI identifies the equipment and target muscle group, and the user logs each set with one tap (reps and weight prefilled and editable).</li>
         <li><strong>Out of Scope #1:</strong> Video motion analysis or real-time rep counting.</li>
         <li><strong>Out of Scope #2:</strong> Social media feeds, leaderboards, or profile sharing.</li>
         <li><strong>Out of Scope #3:</strong> Background syncing with smartwatches or wearables for Build 1.</li>
@@ -189,13 +190,18 @@
       <h3>3. How It Works Under the Hood & Riskiest Assumption (Week 2+)</h3>
       <p><strong>Riskiest Assumption:</strong> Ensuring the AI vision model can reliably and accurately distinguish between similar-looking gym cable and pin-load machines from a standard gym-floor photo.</p>
       <p><strong>Simple Architecture:</strong> [User Uploads Machine Photo] → [Local Web App / Agent] → [AI Vision Model] → [Identified Machine & Log Form Output]</p>
+      <p><strong>Known Issues:</strong></p>
+      <ul>
+        <li>One machine can be used for several exercises (like a cable machine), but the app treats each machine as one exercise.</li>
+        <li>The cheap vision model can't identify less common machines (like the ab crunch machine), and the fallback list only has 6 machines.</li>
+      </ul>
 
       
       <h3>4. Unit Economics & Analytics Snapshot (Updated Weekly)</h3>
       <div class="grid-2">
         <div class="stat-box">
           <div class="stat-label">Cumulative Build Spend</div>
-          <div class="stat-value">$0.02</div>
+          <div class="stat-value">$0.03 (OpenRouter)</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Est. Cost Per User Run</div>
@@ -220,7 +226,7 @@
       <div class="log-entry">
         <h3>Build 1 · Intent.md & Throwaway Prototype (Due Nov 9)</h3>
         <ul>
-          <li><strong>What shipped:</strong> A local web app where I snap a photo of a gym machine, an AI vision model (DeepSeek through OpenRouter) identifies the machine and muscle group, shows what I lifted last time, and lets me log sets, reps and weight. It identified the machine correctly 4 out of 4 times in testing. (<a href="#live-demo">Screenshot above</a>)</li>
+          <li><strong>What shipped:</strong> A local web app where I snap a photo of a gym machine, an AI vision model (DeepSeek through OpenRouter) identifies the machine and muscle group, shows what I lifted last time, and lets me log sets, reps and weight. It identified the machine correctly 4 out of 4 times in testing. (<a href="images/build1-snapset.png">Build 1 screenshot</a>)</li>
           <li><strong>Things learned with AI:</strong> Using the terminal, Git and GitHub, installing Claude Code, fixing a Windows PATH problem, keeping API keys in a .env file, and comparing AI models on cost.</li>
           <li><strong>What broke / changed in PRD:</strong> Switched from the Claude API to a cheaper DeepSeek model via OpenRouter to keep costs low. Tried having the AI read the weight from the weight stack, but the cheap model got it wrong, so I parked that; the plan is to prefill last session's weight instead. Refocused the PRD on me as the user: bare-bones tracking that works alongside the Planet Fitness app.</li>
           <li><strong>Cost & time this week:</strong> $0.02 · 6 hours</li>
@@ -230,10 +236,13 @@
       <div class="log-entry">
         <h3>Build 2 · Smallest Local Version & PostHog (Due Nov 16)</h3>
         <ul>
-          <li><strong>What shipped:</strong> [Local working slice, PostHog verified on this page and the local app, PRD v2, and local setup in AGENTS.md]</li>
-          <li><strong>What broke / changed in PRD:</strong> [Fill in]</li>
-          <li><strong>Cost & time this week:</strong> $[0.00] · [0] hours</li>
+          <li><strong>What shipped:</strong> Prefilled weights, "Same again" one-tap logging, a live set list, a workout summary and history with a progress chart, and PostHog analytics with session replay on both the Product Page and the app. (<a href="#live-demo">App screenshot above</a>)</li>
+          <li><strong>What broke / changed in PRD:</strong> The cheap vision model can't identify less common machines (like the ab crunch machine), and the fallback list only has 6 machines. Pod feedback changed logging to one photo per machine, one tap per set.</li>
+          <li><strong>Next build (considerations):</strong> Keep the cheap model but give it better reference data, a list of my gym's machines plus my own labeled photos, so it chooses from known options. Open questions: (1) machines with several exercises, like the cable machine: identify the machine, then tap the exercise; (2) photos it can't identify at all: pick from the full list or add the machine once, and the app saves that photo so it learns my gym over time.</li>
+          <li><strong>Cost & time this week:</strong> $0.007 (OpenRouter; $0.027 total so far) · 3 hours</li>
         </ul>
+        <p><strong>PostHog verified:</strong> live events from the local app, including the custom <code>photo_identified</code> event and autocaptured clicks.</p>
+        <img src="images/build2-posthog-activity.png" alt="PostHog Activity page listing events from http://localhost:3000: photo_identified, clicked label with text 'Snap the machine', clicked select, clicked input, changed input and Web vitals" style="display:block; width:100%; height:auto; border:1px solid var(--border); border-radius:8px;" />
       </div>
 
       <div class="log-entry">
