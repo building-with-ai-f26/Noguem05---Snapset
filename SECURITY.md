@@ -23,7 +23,7 @@
 | PostHog events and replay are accepted from the live site | PASS for delivery. Playback not yet watched. | [7](#7-analytics-privacy) |
 | Replay privacy fix | PASS on the live site at 3:52 PM | [7](#7-analytics-privacy) |
 | Key redaction in server logs | PASS in tests. Deployed with the 3:51 PM manual deploy of the latest commit (not probed live: that would need a broken key). | [8](#8-what-was-found) |
-| Photo ID works on the live site | OPEN: both test calls (3:39 and 3:52 PM) returned 502 | [8](#8-what-was-found) |
+| Photo ID works on the live site | OPEN: both test calls (3:39 and 3:52 PM) returned 502. Setting corrected, retest pending. | [8](#8-what-was-found) |
 | Full workflow on a phone | OPEN: builder and classmate to test | |
 
 ## How it is protected
@@ -167,7 +167,7 @@ The secret scan and the owner-history check were repeated on the 3:51 PM deploy:
 | 7 | Medium | Bad machines and numbers were saved | Strict validation, database checks | Live (`d4dcae0`) |
 | 8 | Medium | The upload limit didn't stop reading | Stop at 4 KB or 2 MB | Live (`d4dcae0`) |
 | 9 | Medium | Replay captured typed weight through the Log button's text | Mask the button | Live (`ff62342`), retested |
-| 10 | Functional | Photo ID returns 502 on the live site | Cause not known yet, needs the Render log. The model is available, the local key is valid, the server builds a correct request when OpenRouter is stubbed, and neither failed call was billed. | OPEN |
+| 10 | Functional | Photo ID returns 502 on the live site | Cause reported by the builder: a typo in `OPENROUTER_MODEL` on Render, since corrected. Not retested yet. The model is available, the local key is valid, the server builds a correct request when OpenRouter is stubbed, and neither failed call was billed. | OPEN |
 
 ## Known limits
 
