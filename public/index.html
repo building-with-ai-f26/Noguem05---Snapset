@@ -10,6 +10,8 @@
     posthog.init('phc_q9PXNnJsmFv5o9SyWsFNUyFkhkYfiu7MgkYAmomcdyRp', {
         api_host: 'https://us.i.posthog.com',
         defaults: '2026-08-30',
+        session_recording: { maskAllInputs: true }, // replay never sees what's typed
+        enable_recording_console_log: false, // replay doesn't copy the browser console
     })
   </script>
   <style>

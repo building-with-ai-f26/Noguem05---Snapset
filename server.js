@@ -6,6 +6,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { LIMITS, MINUTE, DAY, createLimiter, limitKey, clientIp, isCrossSite, buildHeaders } = require("./security.js");
 
 // Load secrets from .env (never committed). Built into Node 22, nothing to install.
 try {
@@ -239,12 +240,43 @@ async function readJson(req, maxBytes) {
   throw new HttpError(400, "Invalid request.");
 }
 
+// ---- Protections (see security.js) ----
+
+const SECURITY_HEADERS = buildHeaders(fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8"));
+const photoLimit = createLimiter(LIMITS.photosPerMinute, MINUTE);
+const writeLimit = createLimiter(LIMITS.writesPerMinute, MINUTE);
+const dailyPhotoLimit = createLimiter(LIMITS.photosPerDay, DAY);
+
+function enforce(res, waitSeconds, message) {
+  if (!waitSeconds) return;
+  res.setHeader("Retry-After", waitSeconds);
+  throw new HttpError(429, message);
+}
+
+// Runs before any route does any work
+function protect(req, res, pathname) {
+  if (!pathname.startsWith("/api/")) return;
+  res.setHeader("Cache-Control", "no-store");
+  if (req.method === "GET" || req.method === "HEAD") return;
+  if (isCrossSite(req)) throw new HttpError(403, "Requests from other sites aren't allowed.");
+  const visitor = limitKey(clientIp(req));
+  if (pathname === "/api/identify") {
+    enforce(res, photoLimit(visitor), "Too many photos. Wait a minute, or pick the machine below.");
+  } else {
+    enforce(res, writeLimit(visitor), "Too many changes. Wait a minute and try again.");
+  }
+}
+
 // ---- Routes ----
 
 async function handle(req, res) {
   // Never build the URL from the Host header: the visitor controls it
   if (!req.url.startsWith("/")) throw new HttpError(400, "Invalid request.");
   const url = new URL("http://localhost" + req.url);
+  protect(req, res, url.pathname);
+
+  // Render asks this to check the app is up
+  if (req.method === "GET" && url.pathname === "/healthz") return sendJson(res, 200, { ok: true });
 
   // GET /api/machines -> { "Leg Press": "Quads, glutes", ... }
   if (req.method === "GET" && url.pathname === "/api/machines") {
@@ -256,6 +288,9 @@ async function handle(req, res) {
     const { image } = await readJson(req, MAX_PHOTO_BYTES);
     if (typeof image !== "string" || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(image)) {
       throw new HttpError(400, "Send a JPEG, PNG or WebP photo.");
+    }
+    if (process.env.OPENROUTER_API_KEY) {
+      enforce(res, dailyPhotoLimit("app"), "Photo ID hit its limit for today. Pick the machine below.");
     }
     try {
       return sendJson(res, 200, await identifyMachine(image));
@@ -323,6 +358,7 @@ async function handle(req, res) {
 
 // Every request goes through here, so one bad request can't take the server down
 async function safeHandle(req, res) {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
   try {
     await handle(req, res);
   } catch (err) {
