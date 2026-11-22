@@ -14,8 +14,8 @@
 | `npm audit` | PASS, 0 vulnerabilities | [2](#2-dependency-audit) |
 | Database backed up | PASS for the backup. Restore not rehearsed. | [3](#3-backup) |
 | Public key can't read the table | PASS | [4](#4-database-lockdown) |
-| RLS on every table | OPEN: waiting for the builder to confirm the SQL result | [4](#4-database-lockdown) |
-| Public key can't insert or delete from a browser console | OPEN: builder to run the test | [4](#4-database-lockdown) |
+| RLS on every table | PASS: builder ran the SQL check, `logs \| true` (the only table) | [4](#4-database-lockdown) |
+| Public key can't insert or delete from a browser console | PASS at 5:28 PM: both `401`, permission denied, database unchanged | [4](#4-database-lockdown) |
 | 30 fast calls get 429 (photo route and writes) | PASS on the live site | [5](#5-rate-limits) |
 | Faked IP headers don't bypass the limit | PASS on the live site | [5](#5-rate-limits) |
 | Two networks get separate limits | OPEN: needs a second network | [5](#5-rate-limits) |
@@ -88,7 +88,7 @@ Browser console test. Open a blank tab (`about:blank`), because SnapSet's own se
 
 ```js
 (async () => {
-  const url = prompt("Supabase project URL").trim().replace(/\/+$/, "");
+  const url = prompt("Supabase project URL").trim().replace(/\/+$/, "").replace(/\/rest\/v1$/, "");
   const apikey = prompt("PUBLISHABLE key (starts sb_publishable_)").trim();
   if (!apikey.startsWith("sb_publishable_")) return console.log("Stop: that is not the publishable key.");
   const id = "00000000-0000-0000-0000-000000000000";
@@ -100,7 +100,18 @@ Browser console test. Open a blank tab (`about:blank`), because SnapSet's own se
 })();
 ```
 
-Expected: both print `401` and `permission denied for table logs`. Result: OPEN.
+Expected: both print `401` and `permission denied for table logs`.
+
+Result (5:28 PM, Chrome console on `about:blank`, publishable key):
+
+```
+INSERT 401 {"code":"42501",…"message":"permission denied for table logs"}
+DELETE 401 {"code":"42501",…"message":"permission denied for table logs"}
+```
+
+- A backup was taken first. Before and after, the table had the same 12 rows (same SHA-256 fingerprint) and no test row.
+- Supabase's error suggests running `GRANT … TO anon`. Don't: the refusal is the intended result.
+- The first two runs got `404` because the pasted URL ended in `/rest/v1/`. The snippet above now strips it.
 
 ## 5. Rate limits
 
