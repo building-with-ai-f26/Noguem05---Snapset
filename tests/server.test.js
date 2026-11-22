@@ -184,3 +184,8 @@ test("security headers are on the page and the API", TIMEOUT, async (t) => {
   assert.strictEqual((await call("/api/today")).headers.get("cache-control"), "no-store");
   assert.strictEqual((await call("/healthz")).status, 200);
 });
+
+test("replay masks the Log button, which repeats what you type", TIMEOUT, async (t) => {
+  const { call } = await startServer(t);
+  assert.match(await (await call("/")).text(), /<button id="log" class="[^"]*\bph-mask\b/);
+});
