@@ -21,8 +21,9 @@
 | Two networks get separate limits | OPEN: needs a second network | [5](#5-rate-limits) |
 | Try to break the app | PASS after the fixes | [6](#6-break-it-tests) |
 | PostHog events and replay are accepted from the live site | PASS for delivery. Playback not yet watched. | [7](#7-analytics-privacy) |
-| Replay privacy fix and log redaction are deployed | OPEN: pushed, needs a Manual Deploy | [8](#8-what-was-found) |
-| Photo ID works on the live site | OPEN: the one test call returned 502 | [8](#8-what-was-found) |
+| Replay privacy fix | PASS on the live site at 3:52 PM | [7](#7-analytics-privacy) |
+| Key redaction in server logs | PASS in tests. Deployed with the 3:51 PM manual deploy of the latest commit (not probed live: that would need a broken key). | [8](#8-what-was-found) |
+| Photo ID works on the live site | OPEN: both test calls (3:39 and 3:52 PM) returned 502 | [8](#8-what-was-found) |
 | Full workflow on a phone | OPEN: builder and classmate to test | |
 
 ## How it is protected
@@ -141,6 +142,8 @@ The database fingerprint and OpenRouter usage were the same before and after.
 | Unsupported method | 404 |
 | Read the owner's history without the code | 0 sets (12 with the code) |
 
+The secret scan and the owner-history check were repeated on the 3:51 PM deploy: 0 secrets, same results.
+
 `npm test` runs 43 tests for these rules against a fake database, for free.
 
 ## 7. Analytics privacy
@@ -148,6 +151,7 @@ The database fingerprint and OpenRouter usage were the same before and after.
 - Live test: events (`/i/v0/e/`) and replay (`/s/`) were accepted by PostHog with `200`.
 - Inputs are masked, and console, request-body and header capture are off in the page code.
 - The log-code card is excluded from capture. Fake codes, shown and typed, were absent from what PostHog captured.
+- Retest after the fix was deployed (3:52 PM): a weight typed but not logged was absent from what PostHog captured. Before the fix it was present.
 - Still visible by design: logged sets on screen in replay, and machine, reps and weight in the `set_logged` event.
 
 ## 8. What was found
@@ -158,12 +162,12 @@ The database fingerprint and OpenRouter usage were the same before and after.
 | 2 | High | One bad request crashed the server | Safe URL parsing, catch-all handler | Live (`d4dcae0`) |
 | 3 | High | No rate limits | Limits per IP and per day | Live (`fa8d298`) |
 | 4 | High | Render would wipe the file-based log | Supabase | Live (`886e2ce`) |
-| 5 | High | A key pasted with a line break was printed in full in the server log | Check keys before use, redact logs | Pushed (`d10f36a`), needs deploy |
+| 5 | High | A key pasted with a line break was printed in full in the server log | Check keys before use, redact logs | Deployed (`d10f36a`), verified by tests |
 | 6 | High | Evening sets got tomorrow's date on a UTC server | New York dates | Live (`d4dcae0`) |
 | 7 | Medium | Bad machines and numbers were saved | Strict validation, database checks | Live (`d4dcae0`) |
 | 8 | Medium | The upload limit didn't stop reading | Stop at 4 KB or 2 MB | Live (`d4dcae0`) |
-| 9 | Medium | Replay captured typed weight through the Log button's text | Mask the button | Pushed (`ff62342`), needs deploy |
-| 10 | Functional | Photo ID returns 502 on the live site | Cause not known yet. The model is available, the local key is valid, and the failed call was not billed. | OPEN |
+| 9 | Medium | Replay captured typed weight through the Log button's text | Mask the button | Live (`ff62342`), retested |
+| 10 | Functional | Photo ID returns 502 on the live site | Cause not known yet, needs the Render log. The model is available, the local key is valid, the server builds a correct request when OpenRouter is stubbed, and neither failed call was billed. | OPEN |
 
 ## Known limits
 
