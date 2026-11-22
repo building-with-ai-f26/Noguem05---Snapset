@@ -68,6 +68,7 @@
     .sets .new { animation: pop 0.5s ease-out; }
     @keyframes pop { from { background: var(--accent-soft); transform: scale(1.03); } }
     #editor { border: 2px solid var(--accent); border-radius: 12px; padding: 12px; margin-bottom: 14px; }
+    #appError { background: var(--accent-soft); border-radius: 12px; padding: 12px; margin: 0 0 14px; }
     #status { min-height: 1.2em; margin: 8px 0 0; text-align: center; }
 
     /* Dashboard */
@@ -103,6 +104,7 @@
   </header>
 
   <main>
+    <p id="appError" role="alert" hidden></p>
     <section>
       <!-- capture="environment" opens the back camera on phones -->
       <label for="photo" class="camera primary">📷 Snap the machine</label>
@@ -131,8 +133,8 @@
         <div id="editor" hidden>
           <strong id="editorTitle"></strong>
           <div class="row" style="margin-top:8px">
-            <div><label for="editReps">Reps</label><input id="editReps" type="number" min="1" inputmode="numeric"></div>
-            <div><label for="editWeight">Weight (lb)</label><input id="editWeight" type="number" min="0" step="0.5" inputmode="decimal"></div>
+            <div><label for="editReps">Reps</label><input id="editReps" type="number" min="1" max="200" inputmode="numeric"></div>
+            <div><label for="editWeight">Weight (lb)</label><input id="editWeight" type="number" min="0" max="2000" step="0.5" inputmode="decimal"></div>
           </div>
           <div class="row3">
             <button id="editSave" class="primary" type="button">Save</button>
@@ -142,8 +144,8 @@
         </div>
 
         <div class="row">
-          <div><label for="reps">Reps</label><input id="reps" type="number" min="1" inputmode="numeric"></div>
-          <div><label for="weight">Weight (lb)</label><input id="weight" type="number" min="0" step="0.5" inputmode="decimal"></div>
+          <div><label for="reps">Reps</label><input id="reps" type="number" min="1" max="200" inputmode="numeric"></div>
+          <div><label for="weight">Weight (lb)</label><input id="weight" type="number" min="0" max="2000" step="0.5" inputmode="decimal"></div>
         </div>
         <button id="log" class="primary big" type="button">Log</button>
         <p id="status" class="muted"></p>
@@ -168,7 +170,7 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const todayStr = () => new Date().toLocaleDateString("en-CA"); // same date format as the server
+    const todayStr = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // same date as the server
     const fmt = (s) => `${s.reps} × ${s.weight} lb`;
     const prettyDate = (d) => new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
@@ -179,9 +181,14 @@
     let editingId = null;   // the set open in the editor
 
     async function getJson(url, options) {
-      const res = await fetch(url, options);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Something went wrong.");
+      let res, data;
+      try {
+        res = await fetch(url, { signal: AbortSignal.timeout(90000), ...options }); // a sleeping free server takes ~1 min
+        data = await res.json();
+      } catch {
+        throw new Error("Couldn't reach SnapSet. Check your connection and try again.");
+      }
+      if (!res.ok) throw new Error(data?.error || "Something went wrong.");
       return data;
     }
     // Send a custom event to PostHog. If PostHog is blocked or offline, the app keeps working.
@@ -189,6 +196,12 @@
 
     const sendJson = (url, method, body) =>
       getJson(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+    // Any failure nothing else handled still gets shown, instead of failing silently
+    window.addEventListener("unhandledrejection", (e) => {
+      $("appError").textContent = e.reason?.message || "Something went wrong.";
+      $("appError").hidden = false;
+    });
 
     // Load the machine list from the server (one shared list)
     getJson("/api/machines").then((m) => {
@@ -279,11 +292,15 @@
       updateLogButton();
     }
 
+    // Same limits as the server. An empty weight box is not 0 lb.
+    const validSet = (reps, weight) =>
+      Number.isInteger(Number(reps)) && reps >= 1 && reps <= 200 && weight !== "" && weight >= 0 && weight <= 2000;
+
     // The big button says exactly what it will save
     function updateLogButton() {
       const reps = $("reps").value, weight = $("weight").value;
       const btn = $("log");
-      if (!(Number(reps) > 0) || weight === "" || !(Number(weight) >= 0)) {
+      if (!validSet(reps, weight)) {
         btn.textContent = "Enter reps and weight";
         btn.disabled = true;
         return;
@@ -361,6 +378,10 @@
 
     $("editCancel").addEventListener("click", closeEditor);
     $("editSave").addEventListener("click", async () => {
+      if (!validSet($("editReps").value, $("editWeight").value)) {
+        $("status").textContent = "Reps must be 1-200 and weight 0-2000 lb.";
+        return;
+      }
       try {
         await sendJson("/api/log?id=" + encodeURIComponent(editingId), "PUT",
           { reps: Number($("editReps").value), weight: Number($("editWeight").value) });

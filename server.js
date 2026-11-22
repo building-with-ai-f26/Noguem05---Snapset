@@ -34,7 +34,8 @@ const MACHINES = {
 // Each entry is one set (sets: 1). Entries saved before Build 2 may have sets > 1
 // ("3 sets x 10 reps" in one entry); totals add them up so they still count correctly.
 
-const today = () => new Date().toLocaleDateString("en-CA"); // your local date, e.g. 2026-11-05
+// Always New York's date, e.g. 2026-11-05. (Render's clock is UTC, so evenings would count as tomorrow.)
+const today = (now = new Date()) => now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
 function writeLogs(logs, file = DATA_FILE) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -114,6 +115,13 @@ function workoutSummary(logs, date) {
   return { date, machines, totalSets: countSets(todays), increases };
 }
 
+// ---- Validation ----
+
+// hasOwn, so built-in names like "constructor" don't count as machines
+const isMachine = (name) => typeof name === "string" && Object.hasOwn(MACHINES, name);
+const isReps = (n) => Number.isInteger(n) && n >= 1 && n <= 200;
+const isWeight = (n) => typeof n === "number" && n >= 0 && n <= 2000;
+
 // ---- AI identification (OpenRouter) ----
 
 // Turn the model's text reply into { machine, muscleGroup }.
@@ -122,7 +130,7 @@ function parseIdentification(text) {
   try {
     const cleaned = String(text).replace(/```(json)?/g, "").trim(); // some models wrap JSON in ``` fences
     const { machine } = JSON.parse(cleaned);
-    if (MACHINES[machine]) return { machine, muscleGroup: MACHINES[machine] };
+    if (isMachine(machine)) return { machine, muscleGroup: MACHINES[machine] };
   } catch {
     // Not valid JSON: treat as "not sure"
   }
@@ -135,6 +143,7 @@ async function identifyMachine(imageDataUrl) {
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
+    signal: AbortSignal.timeout(30000), // don't wait forever for the AI
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
@@ -186,22 +195,56 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
-function readBody(req, maxBytes = 8 * 1024 * 1024) {
+// An error whose message is safe to show the visitor
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const MAX_SET_BYTES = 4 * 1024;
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024; // the page shrinks photos to well under this
+
+function readBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > maxBytes) reject(new Error("Request too large"));
-    });
-    req.on("end", () => resolve(body));
-    req.on("error", reject);
+    const tooBig = () => reject(new HttpError(413, "That's too large to upload."));
+    if (Number(req.headers["content-length"]) > maxBytes) return tooBig();
+    const chunks = [];
+    let size = 0;
+    function onData(chunk) {
+      size += chunk.length;
+      if (size > maxBytes) {
+        // Stop reading: don't keep the rest in memory
+        req.off("data", onData);
+        req.pause();
+        return tooBig();
+      }
+      chunks.push(chunk);
+    }
+    req.on("data", onData);
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", () => reject(new HttpError(400, "Upload interrupted.")));
   });
+}
+
+async function readJson(req, maxBytes) {
+  const body = await readBody(req, maxBytes);
+  try {
+    const data = JSON.parse(body);
+    if (data && typeof data === "object") return data;
+  } catch {
+    // Not JSON: refused below
+  }
+  throw new HttpError(400, "Invalid request.");
 }
 
 // ---- Routes ----
 
 async function handle(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  // Never build the URL from the Host header: the visitor controls it
+  if (!req.url.startsWith("/")) throw new HttpError(400, "Invalid request.");
+  const url = new URL("http://localhost" + req.url);
 
   // GET /api/machines -> { "Leg Press": "Quads, glutes", ... }
   if (req.method === "GET" && url.pathname === "/api/machines") {
@@ -210,11 +253,11 @@ async function handle(req, res) {
 
   // POST /api/identify  { image: "data:image/jpeg;base64,..." } -> { machine, muscleGroup }
   if (req.method === "POST" && url.pathname === "/api/identify") {
+    const { image } = await readJson(req, MAX_PHOTO_BYTES);
+    if (typeof image !== "string" || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(image)) {
+      throw new HttpError(400, "Send a JPEG, PNG or WebP photo.");
+    }
     try {
-      const { image } = JSON.parse(await readBody(req));
-      if (!/^data:image\/(jpeg|png|webp);base64,/.test(image || "")) {
-        return sendJson(res, 400, { error: "Send a JPEG, PNG or WebP photo." });
-      }
       return sendJson(res, 200, await identifyMachine(image));
     } catch (err) {
       console.error("Identify failed:", err.message);
@@ -244,28 +287,21 @@ async function handle(req, res) {
 
   // POST /api/log  { machine, reps, weight } -> saves ONE set with today's date
   if (req.method === "POST" && url.pathname === "/api/log") {
-    try {
-      const { machine, reps, weight } = JSON.parse(await readBody(req));
-      if (!MACHINES[machine] || !(reps > 0) || !(weight >= 0)) {
-        return sendJson(res, 400, { error: "Need machine, reps and weight." });
-      }
-      const entry = { machine, date: today(), sets: 1, reps: Number(reps), weight: Number(weight) };
-      return sendJson(res, 201, addLog(entry));
-    } catch {
-      return sendJson(res, 400, { error: "Invalid request." });
+    const { machine, reps, weight } = await readJson(req, MAX_SET_BYTES);
+    if (!isMachine(machine) || !isReps(reps) || !isWeight(weight)) {
+      throw new HttpError(400, "Need a machine, whole reps (1-200) and a weight (0-2000 lb).");
     }
+    return sendJson(res, 201, addLog({ machine, date: today(), sets: 1, reps, weight }));
   }
 
   // PUT /api/log?id=...  { reps, weight } -> fix a set you mistyped
   if (req.method === "PUT" && url.pathname === "/api/log") {
-    try {
-      const { reps, weight } = JSON.parse(await readBody(req));
-      if (!(reps > 0) || !(weight >= 0)) return sendJson(res, 400, { error: "Need reps and weight." });
-      const updated = updateLog(url.searchParams.get("id"), { reps, weight });
-      return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "Set not found." });
-    } catch {
-      return sendJson(res, 400, { error: "Invalid request." });
+    const { reps, weight } = await readJson(req, MAX_SET_BYTES);
+    if (!isReps(reps) || !isWeight(weight)) {
+      throw new HttpError(400, "Need whole reps (1-200) and a weight (0-2000 lb).");
     }
+    const updated = updateLog(url.searchParams.get("id"), { reps, weight });
+    return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "Set not found." });
   }
 
   // DELETE /api/log?id=... -> remove a set logged by mistake
@@ -285,13 +321,28 @@ async function handle(req, res) {
   res.end("Not found");
 }
 
+// Every request goes through here, so one bad request can't take the server down
+async function safeHandle(req, res) {
+  try {
+    await handle(req, res);
+  } catch (err) {
+    const known = err instanceof HttpError;
+    if (!known) console.error("Request failed:", err.message); // details stay in the server log
+    if (res.headersSent) return res.destroy();
+    if (err.status === 413) res.setHeader("Connection", "close");
+    sendJson(res, known ? err.status : 500, {
+      error: known ? err.message : "Something went wrong. Please try again.",
+    });
+  }
+}
+
 if (require.main === module) {
-  http.createServer(handle).listen(PORT, () => {
-    console.log(`SnapSet running at http://localhost:${PORT}`);
+  http.createServer(safeHandle).listen(PORT, function () {
+    console.log(`SnapSet running at http://localhost:${this.address().port}`);
     if (!process.env.OPENROUTER_API_KEY) console.log("Note: no OPENROUTER_API_KEY in .env, photo identification is off.");
   });
 }
 
 module.exports = {
-  readLogs, addLog, updateLog, deleteLog, lastLogFor, historyFor, workoutSummary, parseIdentification, MACHINES,
+  readLogs, addLog, updateLog, deleteLog, lastLogFor, historyFor, workoutSummary, parseIdentification, today, MACHINES,
 };
