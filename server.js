@@ -1,11 +1,13 @@
-// SnapSet — tiny local server. No dependencies: only built-in Node modules.
-// Serves public/index.html, saves workout logs to data/logs.json, and asks an
-// AI vision model (via OpenRouter) which machine is in a photo.
+// SnapSet — a small server. No dependencies: only built-in Node modules.
+// Serves public/index.html, saves workout logs to Supabase (storage.js), keeps each
+// visitor's log private (visitor.js), limits abuse (security.js), and asks an AI
+// vision model (via OpenRouter) which machine is in a photo.
 
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
+const { createStorage } = require("./storage.js");
+const { newCode, parseCode, formatCode, hashCode, readCode, saveCode } = require("./visitor.js");
 const { LIMITS, MINUTE, DAY, createLimiter, limitKey, clientIp, isCrossSite, buildHeaders } = require("./security.js");
 
 // Load secrets from .env (never committed). Built into Node 22, nothing to install.
@@ -17,7 +19,7 @@ try {
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
-const DATA_FILE = process.env.SNAPSET_DATA_FILE || path.join(__dirname, "data", "logs.json");
+const storage = createStorage();
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4.1-flash";
 
 // The machines SnapSet knows about, and the muscles each one works.
@@ -31,61 +33,12 @@ const MACHINES = {
   "Shoulder Press": "Shoulders, triceps",
 };
 
-// ---- Storage: a JSON array of { id, machine, date, sets, reps, weight } ----
+// ---- Workout math. A log entry is { id, machine, date, sets, reps, weight } ----
 // Each entry is one set (sets: 1). Entries saved before Build 2 may have sets > 1
 // ("3 sets x 10 reps" in one entry); totals add them up so they still count correctly.
 
 // Always New York's date, e.g. 2026-11-05. (Render's clock is UTC, so evenings would count as tomorrow.)
 const today = (now = new Date()) => now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-
-function writeLogs(logs, file = DATA_FILE) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(logs, null, 2));
-}
-
-function readLogs(file = DATA_FILE) {
-  if (!fs.existsSync(file)) return [];
-  const logs = JSON.parse(fs.readFileSync(file, "utf8"));
-  // Old entries have no id. Give them one (once) so they can be edited or deleted too.
-  if (logs.some((l) => !l.id)) {
-    for (const l of logs) l.id ||= crypto.randomUUID();
-    writeLogs(logs, file);
-  }
-  return logs;
-}
-
-function addLog(entry, file = DATA_FILE) {
-  const logs = readLogs(file);
-  const saved = { id: crypto.randomUUID(), ...entry };
-  logs.push(saved);
-  writeLogs(logs, file);
-  return saved;
-}
-
-// Change the reps/weight of one set. Returns the updated entry, or null if the id doesn't exist.
-function updateLog(id, { reps, weight }, file = DATA_FILE) {
-  const logs = readLogs(file);
-  const entry = logs.find((l) => l.id === id);
-  if (!entry) return null;
-  entry.reps = Number(reps);
-  entry.weight = Number(weight);
-  writeLogs(logs, file);
-  return entry;
-}
-
-// Remove one set. Returns true if something was deleted.
-function deleteLog(id, file = DATA_FILE) {
-  const logs = readLogs(file);
-  const kept = logs.filter((l) => l.id !== id);
-  if (kept.length === logs.length) return false;
-  writeLogs(kept, file);
-  return true;
-}
-
-function lastLogFor(machine, file = DATA_FILE) {
-  const matches = readLogs(file).filter((l) => l.machine === machine);
-  return matches.length ? matches[matches.length - 1] : null;
-}
 
 const countSets = (entries) => entries.reduce((sum, l) => sum + (l.sets || 1), 0);
 const topWeight = (entries) => Math.max(...entries.map((l) => l.weight));
@@ -121,6 +74,7 @@ function workoutSummary(logs, date) {
 // hasOwn, so built-in names like "constructor" don't count as machines
 const isMachine = (name) => typeof name === "string" && Object.hasOwn(MACHINES, name);
 const isReps = (n) => Number.isInteger(n) && n >= 1 && n <= 200;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isWeight = (n) => typeof n === "number" && n >= 0 && n <= 2000;
 
 // ---- AI identification (OpenRouter) ----
@@ -244,6 +198,7 @@ async function readJson(req, maxBytes) {
 
 const SECURITY_HEADERS = buildHeaders(fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8"));
 const photoLimit = createLimiter(LIMITS.photosPerMinute, MINUTE);
+const readLimit = createLimiter(LIMITS.readsPerMinute, MINUTE);
 const writeLimit = createLimiter(LIMITS.writesPerMinute, MINUTE);
 const dailyPhotoLimit = createLimiter(LIMITS.photosPerDay, DAY);
 
@@ -257,9 +212,11 @@ function enforce(res, waitSeconds, message) {
 function protect(req, res, pathname) {
   if (!pathname.startsWith("/api/")) return;
   res.setHeader("Cache-Control", "no-store");
-  if (req.method === "GET" || req.method === "HEAD") return;
-  if (isCrossSite(req)) throw new HttpError(403, "Requests from other sites aren't allowed.");
   const visitor = limitKey(clientIp(req));
+  if (req.method === "GET" || req.method === "HEAD") {
+    return enforce(res, readLimit(visitor), "Too many requests. Wait a minute and try again.");
+  }
+  if (isCrossSite(req)) throw new HttpError(403, "Requests from other sites aren't allowed.");
   if (pathname === "/api/identify") {
     enforce(res, photoLimit(visitor), "Too many photos. Wait a minute, or pick the machine below.");
   } else {
@@ -300,24 +257,51 @@ async function handle(req, res) {
     }
   }
 
+  // Everything below only ever sees this visitor's own sets
+  const code = readCode(req);
+  const owner = code && hashCode(code);
+  const myLogs = (filter) => (owner ? storage.list(owner, filter) : []);
+  const machineParam = url.searchParams.get("machine");
+  const id = url.searchParams.get("id");
+
   // GET /api/last?machine=Leg%20Press  -> last log for that machine (or null)
   if (req.method === "GET" && url.pathname === "/api/last") {
-    return sendJson(res, 200, lastLogFor(url.searchParams.get("machine")));
+    if (!isMachine(machineParam)) throw new HttpError(400, "Unknown machine.");
+    return sendJson(res, 200, (await myLogs({ machine: machineParam })).at(-1) || null);
   }
 
   // GET /api/today -> every set logged today, in the order you did them
   if (req.method === "GET" && url.pathname === "/api/today") {
-    return sendJson(res, 200, readLogs().filter((l) => l.date === today()));
+    return sendJson(res, 200, await myLogs({ date: today() }));
   }
 
   // GET /api/history?machine=Leg%20Press -> past sessions on that machine, newest first
   if (req.method === "GET" && url.pathname === "/api/history") {
-    return sendJson(res, 200, historyFor(url.searchParams.get("machine"), readLogs()));
+    if (!isMachine(machineParam)) throw new HttpError(400, "Unknown machine.");
+    return sendJson(res, 200, historyFor(machineParam, await myLogs({ machine: machineParam })));
   }
 
   // GET /api/summary -> today's "Finish workout" summary
   if (req.method === "GET" && url.pathname === "/api/summary") {
-    return sendJson(res, 200, workoutSummary(readLogs(), today()));
+    return sendJson(res, 200, workoutSummary(await myLogs(), today()));
+  }
+
+  // POST /api/code -> this browser's log code, to type on another device
+  if (req.method === "POST" && url.pathname === "/api/code") {
+    const mine = code || newCode();
+    saveCode(res, mine);
+    return sendJson(res, 200, { code: formatCode(mine) });
+  }
+
+  // POST /api/code/use  { code } -> this browser switches to that code's log
+  if (req.method === "POST" && url.pathname === "/api/code/use") {
+    const typed = parseCode((await readJson(req, MAX_SET_BYTES)).code);
+    // An unknown code is refused, so a typo can't quietly open a new empty log
+    if (!typed || !(await storage.hasLog(hashCode(typed)))) {
+      throw new HttpError(404, "No log found for that code. Check it, or log a set on the first device.");
+    }
+    saveCode(res, typed);
+    return sendJson(res, 200, { ok: true });
   }
 
   // POST /api/log  { machine, reps, weight } -> saves ONE set with today's date
@@ -326,7 +310,10 @@ async function handle(req, res) {
     if (!isMachine(machine) || !isReps(reps) || !isWeight(weight)) {
       throw new HttpError(400, "Need a machine, whole reps (1-200) and a weight (0-2000 lb).");
     }
-    return sendJson(res, 201, addLog({ machine, date: today(), sets: 1, reps, weight }));
+    const mine = code || newCode(); // the first set creates this visitor's log
+    const saved = await storage.add(hashCode(mine), { machine, date: today(), sets: 1, reps, weight });
+    saveCode(res, mine);
+    return sendJson(res, 201, saved);
   }
 
   // PUT /api/log?id=...  { reps, weight } -> fix a set you mistyped
@@ -335,20 +322,22 @@ async function handle(req, res) {
     if (!isReps(reps) || !isWeight(weight)) {
       throw new HttpError(400, "Need whole reps (1-200) and a weight (0-2000 lb).");
     }
-    const updated = updateLog(url.searchParams.get("id"), { reps, weight });
+    const updated = owner && UUID.test(id) ? await storage.update(owner, id, { reps, weight }) : null;
     return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "Set not found." });
   }
 
   // DELETE /api/log?id=... -> remove a set logged by mistake
   if (req.method === "DELETE" && url.pathname === "/api/log") {
-    return deleteLog(url.searchParams.get("id"))
+    const deleted = owner && UUID.test(id) && (await storage.remove(owner, id));
+    return deleted
       ? sendJson(res, 200, { ok: true })
       : sendJson(res, 404, { error: "Set not found." });
   }
 
   // The web page
   if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    if (code) saveCode(res, code); // each visit renews the cookie
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
     return fs.createReadStream(path.join(PUBLIC_DIR, "index.html")).pipe(res);
   }
 
@@ -375,10 +364,11 @@ async function safeHandle(req, res) {
 if (require.main === module) {
   http.createServer(safeHandle).listen(PORT, function () {
     console.log(`SnapSet running at http://localhost:${this.address().port}`);
+    if (!storage.configured) console.log("Note: no SUPABASE_URL / SUPABASE_SECRET_KEY, saving and history are off.");
     if (!process.env.OPENROUTER_API_KEY) console.log("Note: no OPENROUTER_API_KEY in .env, photo identification is off.");
   });
 }
 
 module.exports = {
-  readLogs, addLog, updateLog, deleteLog, lastLogFor, historyFor, workoutSummary, parseIdentification, today, MACHINES,
+  historyFor, workoutSummary, parseIdentification, today, MACHINES,
 };

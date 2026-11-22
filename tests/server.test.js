@@ -3,38 +3,10 @@
 // Every network step has a timeout so a test can't hang.
 const test = require("node:test");
 const assert = require("node:assert");
-const { spawn } = require("child_process");
-const fs = require("fs");
 const net = require("net");
-const os = require("os");
-const path = require("path");
+const { startServer } = require("./helpers.js");
 
 const TIMEOUT = { timeout: 15000 };
-
-async function startServer(t, seed, env = {}) {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "snapset-")), "logs.json");
-  if (seed !== undefined) fs.writeFileSync(file, seed);
-  const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, PORT: "0", SNAPSET_DATA_FILE: file, OPENROUTER_API_KEY: "", RENDER: "", ...env },
-  });
-  t.after(() => child.kill());
-  child.stderr.resume();
-  const port = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("server didn't start")), 5000);
-    let output = "";
-    child.stdout.on("data", (chunk) => {
-      output += chunk;
-      const found = output.match(/localhost:([1-9]\d*)/);
-      if (found) {
-        clearTimeout(timer);
-        resolve(Number(found[1]));
-      }
-    });
-  });
-  const call = (route, options = {}) =>
-    fetch(`http://127.0.0.1:${port}${route}`, { ...options, signal: AbortSignal.timeout(3000) });
-  return { port, call };
-}
 
 // fetch tidies up bad requests, so these are sent as raw text
 function rawStatus(port, text) {
@@ -66,15 +38,15 @@ test("odd paths don't crash the server", TIMEOUT, async (t) => {
 });
 
 test("broken storage is a 500 without internal details, not a crash", TIMEOUT, async (t) => {
-  const { call } = await startServer(t, "{bad");
-  const res = await call("/api/today");
+  const { call } = await startServer(t, { broken: true });
+  const res = await call("/api/today", { headers: { Cookie: "snapset_log=0123456789ABCDEFGHJK" } });
   assert.strictEqual(res.status, 500);
   assert.deepStrictEqual(await res.json(), { error: "Something went wrong. Please try again." });
   assert.strictEqual((await call("/api/machines")).status, 200);
 });
 
 test("bad sets are refused", TIMEOUT, async (t) => {
-  const { call } = await startServer(t);
+  const { call, db } = await startServer(t);
   const bad = [
     '{"machine":"constructor","reps":1,"weight":1}',
     '{"machine":"__proto__","reps":1,"weight":1}',
@@ -90,13 +62,15 @@ test("bad sets are refused", TIMEOUT, async (t) => {
     "not json",
   ];
   for (const body of bad) assert.strictEqual((await call("/api/log", { method: "POST", body })).status, 400, body);
-  assert.deepStrictEqual(await (await call("/api/today")).json(), []);
+  assert.deepStrictEqual(db.state.rows, []);
 });
 
 test("editing follows the same rules as logging", TIMEOUT, async (t) => {
   const { call } = await startServer(t);
-  const { id } = await (await call("/api/log", { method: "POST", body: '{"machine":"Leg Press","reps":10,"weight":100}' })).json();
-  const res = await call(`/api/log?id=${id}`, { method: "PUT", body: '{"reps":10,"weight":1e300}' });
+  const logged = await call("/api/log", { method: "POST", body: '{"machine":"Leg Press","reps":10,"weight":100}' });
+  const { id } = await logged.json();
+  const Cookie = logged.headers.get("set-cookie").split(";")[0];
+  const res = await call(`/api/log?id=${id}`, { method: "PUT", headers: { Cookie }, body: '{"reps":10,"weight":1e300}' });
   assert.strictEqual(res.status, 400);
 });
 
@@ -164,7 +138,7 @@ test("made-up IP headers don't reset the limit", TIMEOUT, async (t) => {
 });
 
 test("on Render each real visitor IP has its own limit", TIMEOUT, async (t) => {
-  const { call } = await startServer(t, undefined, { RENDER: "true" });
+  const { call } = await startServer(t, { env: { RENDER: "true" } });
   const from = (ip) => () => call("/api/identify", {
     method: "POST",
     body: "{}",

@@ -1,51 +1,10 @@
 // Run with: npm test
 const test = require("node:test");
 const assert = require("node:assert");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const { addLog, readLogs, updateLog, deleteLog, lastLogFor, historyFor, workoutSummary } = require("../server.js");
+const { historyFor, workoutSummary } = require("../server.js");
 
-// Use a throwaway file so tests never touch your real logs
-const tmpFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "snapset-")), "logs.json");
 const set = (machine, date, reps, weight) => ({ machine, date, sets: 1, reps, weight });
-
-test("no logs yet returns null", () => {
-  assert.strictEqual(lastLogFor("Leg Press", tmpFile()), null);
-});
-
-test("returns the most recent log for the chosen machine only", () => {
-  const file = tmpFile();
-  addLog({ machine: "Leg Press", date: "2026-11-01", sets: 3, reps: 10, weight: 180 }, file);
-  addLog({ machine: "Chest Press", date: "2026-11-02", sets: 3, reps: 8, weight: 90 }, file);
-  addLog({ machine: "Leg Press", date: "2026-11-03", sets: 4, reps: 8, weight: 200 }, file);
-
-  const { id, ...last } = lastLogFor("Leg Press", file);
-  assert.ok(id, "every saved log gets an id");
-  assert.deepStrictEqual(last, { machine: "Leg Press", date: "2026-11-03", sets: 4, reps: 8, weight: 200 });
-  assert.strictEqual(lastLogFor("Chest Press", file).weight, 90);
-});
-
-test("old logs without an id get one, and keep it on the next read", () => {
-  const file = tmpFile();
-  fs.writeFileSync(file, JSON.stringify([{ machine: "Leg Press", date: "2026-11-01", sets: 3, reps: 10, weight: 180 }]));
-  const first = readLogs(file)[0].id;
-  assert.ok(first);
-  assert.strictEqual(readLogs(file)[0].id, first);
-});
-
-test("a set can be edited and deleted by id", () => {
-  const file = tmpFile();
-  const a = addLog(set("Leg Press", "2026-11-14", 10, 180), file);
-  const b = addLog(set("Leg Press", "2026-11-14", 10, 180), file);
-
-  assert.strictEqual(updateLog(a.id, { reps: 8, weight: 190 }, file).weight, 190);
-  assert.strictEqual(deleteLog(b.id, file), true);
-  assert.deepStrictEqual(readLogs(file).map((l) => [l.reps, l.weight]), [[8, 190]]);
-
-  assert.strictEqual(updateLog("no-such-id", { reps: 1, weight: 1 }, file), null);
-  assert.strictEqual(deleteLog("no-such-id", file), false);
-});
+// Saving, editing and deleting are tested through the real server in storage.test.js
 
 test("history groups sets by day, newest first, with the top weight of each day", () => {
   const logs = [

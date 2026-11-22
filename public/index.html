@@ -10,7 +10,7 @@
     posthog.init('phc_q9PXNnJsmFv5o9SyWsFNUyFkhkYfiu7MgkYAmomcdyRp', {
         api_host: 'https://us.i.posthog.com',
         defaults: '2026-08-30',
-        session_recording: { maskAllInputs: true }, // replay never sees what's typed
+        session_recording: { maskAllInputs: true, recordBody: false, recordHeaders: false }, // no typed text, no API contents
         enable_recording_console_log: false, // replay doesn't copy the browser console
     })
   </script>
@@ -84,6 +84,9 @@
     .chips button.on { background: var(--accent); color: var(--accent-ink); }
     .session { padding: 8px 0; border-bottom: 1px solid var(--line); }
     .session:last-child { border-bottom: 0; }
+    #myCode { font: 700 18px ui-monospace, monospace; text-align: center; margin: 12px 0 4px; user-select: all; }
+    #codeArea { margin-top: 12px; }
+    #codeArea input { margin-bottom: 8px; text-transform: uppercase; }
 
     /* Chart */
     .chart { position: relative; margin: 12px 0 4px; }
@@ -165,6 +168,23 @@
       <h2>History</h2>
       <div id="historyChips" class="chips"></div>
       <div id="historyView"></div>
+    </section>
+
+    <!-- ph-no-capture: PostHog records neither clicks nor replay in this card, because the code works like a password -->
+    <section id="logAccess" class="ph-no-capture">
+      <h2>Your log</h2>
+      <p class="muted" style="margin:0; font-size:14px">This browser has its own private log. No sign-in needed.</p>
+      <button id="codeToggle" class="link" type="button">Use my log on another device</button>
+      <div id="codeArea" hidden>
+        <button id="codeShow" class="secondary" type="button">Show this log's code</button>
+        <p id="myCode" hidden></p>
+        <p class="muted" style="font-size:13px">Save the code somewhere private. Anyone who has it can change this log, and without it a log can't be recovered.</p>
+        <label for="codeInput">Have a code? Type it here</label>
+        <input id="codeInput" type="text" maxlength="40" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX">
+        <button id="codeUse" class="primary" type="button">Open that log here</button>
+        <p class="muted" style="font-size:13px">This replaces the log shown in this browser. Save its code first if you want to return to it.</p>
+        <p id="codeStatus" role="status"></p>
+      </div>
     </section>
 
     <p class="muted" style="text-align:center; font-size:13px">This site uses PostHog analytics and session recording.</p>
@@ -429,6 +449,27 @@
         `<p><strong>🎉 Workout done!</strong></p>` +
         `<p>${s.machines.length} machine${s.machines.length === 1 ? "" : "s"}: ${s.machines.join(", ")}</p>` +
         `<p>${s.totalSets} total sets</p>` + ups;
+    });
+
+    // ---- Your log code (never sent to PostHog) ----
+
+    $("codeToggle").addEventListener("click", () => {
+      $("codeArea").hidden = !$("codeArea").hidden;
+      $("myCode").hidden = true;
+      $("myCode").textContent = "";
+    });
+    $("codeShow").addEventListener("click", async () => {
+      try {
+        $("myCode").textContent = (await sendJson("/api/code", "POST", {})).code;
+        $("myCode").hidden = false;
+      } catch (err) { $("codeStatus").textContent = err.message; }
+    });
+    $("codeUse").addEventListener("click", async () => {
+      try {
+        await sendJson("/api/code/use", "POST", { code: $("codeInput").value });
+        $("codeInput").value = "";
+        location.reload();
+      } catch (err) { $("codeStatus").textContent = err.message; }
     });
 
     // ---- History ----

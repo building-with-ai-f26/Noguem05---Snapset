@@ -11,6 +11,7 @@ const DAY = 24 * 60 * MINUTE;
 const LIMITS = {
   photosPerMinute: 10, // per visitor IP
   writesPerMinute: 20, // per visitor IP
+  readsPerMinute: 240, // per visitor IP, because every read costs a database call
   photosPerDay: 300, // whole app, so many IPs together still can't run up the AI bill
 };
 
