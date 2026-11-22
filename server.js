@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const { createStorage } = require("./storage.js");
 const { newCode, parseCode, formatCode, hashCode, readCode, saveCode } = require("./visitor.js");
-const { LIMITS, MINUTE, DAY, createLimiter, limitKey, clientIp, isCrossSite, buildHeaders } = require("./security.js");
+const { cleanKey, redact, LIMITS, MINUTE, DAY, createLimiter, limitKey, clientIp, isCrossSite, buildHeaders } = require("./security.js");
 
 // Load secrets from .env (never committed). Built into Node 22, nothing to install.
 try {
@@ -93,7 +93,7 @@ function parseIdentification(text) {
 }
 
 async function identifyMachine(imageDataUrl) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = cleanKey("OPENROUTER_API_KEY", process.env.OPENROUTER_API_KEY);
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is missing. Add it to your .env file.");
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -252,7 +252,7 @@ async function handle(req, res) {
     try {
       return sendJson(res, 200, await identifyMachine(image));
     } catch (err) {
-      console.error("Identify failed:", err.message);
+      console.error("Identify failed:", redact(err.message));
       return sendJson(res, 502, { error: "Couldn't identify the photo. Pick the machine below." });
     }
   }
@@ -352,7 +352,7 @@ async function safeHandle(req, res) {
     await handle(req, res);
   } catch (err) {
     const known = err instanceof HttpError;
-    if (!known) console.error("Request failed:", err.message); // details stay in the server log
+    if (!known) console.error("Request failed:", redact(err.message)); // details stay in the server log
     if (res.headersSent) return res.destroy();
     if (err.status === 413) res.setHeader("Connection", "close");
     sendJson(res, known ? err.status : 500, {

@@ -27,7 +27,7 @@ async function startServer(t, { broken = false, env = {} } = {}) {
   });
   const call = (route, options = {}) =>
     fetch(`http://127.0.0.1:${port}${route}`, { ...options, signal: AbortSignal.timeout(3000) });
-  return { port, call, db };
+  return { port, call, db, logs: () => errors };
 }
 
 module.exports = { startServer };

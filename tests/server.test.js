@@ -189,3 +189,22 @@ test("replay masks the Log button, which repeats what you type", TIMEOUT, async 
   const { call } = await startServer(t);
   assert.match(await (await call("/")).text(), /<button id="log" class="[^"]*\bph-mask\b/);
 });
+
+for (const name of ["OPENROUTER_API_KEY", "SUPABASE_SECRET_KEY"]) {
+  test(`a badly pasted ${name} never shows up in the server log`, TIMEOUT, async (t) => {
+    const { call, logs } = await startServer(t, { env: { [name]: "fake-private-value\nOTHER=1" } });
+    const res = name === "OPENROUTER_API_KEY"
+      ? await call("/api/identify", { method: "POST", body: '{"image":"data:image/jpeg;base64,AAAA"}' })
+      : await call("/api/today", { headers: { Cookie: "snapset_log=0123456789ABCDEFGHJK" } });
+    assert.ok(res.status >= 500);
+    for (let i = 0; i < 40 && !logs(); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.doesNotMatch(logs(), /fake-private-value/);
+    assert.match(logs(), new RegExp(`${name} contains`)); // still says which setting is wrong
+  });
+}
+
+test("anything key-shaped is hidden before logging", () => {
+  const { redact } = require("../security.js");
+  const fakes = ["sk" + "-or-v1-abc", "sb" + "_secret_abc"];
+  assert.strictEqual(redact(`bad model ${fakes[0]} and ${fakes[1]}`), "bad model [hidden] and [hidden]");
+});

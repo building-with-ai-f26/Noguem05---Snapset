@@ -91,4 +91,16 @@ function buildHeaders(html) {
   };
 }
 
-module.exports = { LIMITS, MINUTE, DAY, createLimiter, limitKey, clientIp, isCrossSite, buildHeaders };
+// fetch repeats a malformed header in its error, key included. So check keys before using them.
+function cleanKey(name, value) {
+  const key = (value || "").trim();
+  if (/[^\x21-\x7e]/.test(key)) {
+    throw new Error(`${name} contains a space, line break or unusual character. Paste it again.`);
+  }
+  return key;
+}
+
+// Second safety net: hide anything key-shaped before it is logged
+const redact = (text) => String(text).replace(/(sk-or-|sb_secret_)[\w-]+/g, "[hidden]");
+
+module.exports = { cleanKey, redact, LIMITS, MINUTE, DAY, createLimiter, limitKey, clientIp, isCrossSite, buildHeaders };

@@ -2,6 +2,8 @@
 // which skips Row Level Security, so every query for a visitor MUST filter by visitor_id.
 // Talks to Supabase's REST API with built-in fetch (no packages).
 
+const { cleanKey } = require("./security.js");
+
 const COLUMNS = "id,machine,date,sets,reps,weight"; // never send visitor_id to the browser
 const MAX_ROWS = 1000; // Supabase returns at most 1000 rows per request
 
@@ -10,13 +12,14 @@ function createStorage(url = process.env.SUPABASE_URL, key = process.env.SUPABAS
 
   async function request(method, params, body) {
     if (!configured) throw new Error("SUPABASE_URL or SUPABASE_SECRET_KEY is missing.");
+    const apikey = cleanKey("SUPABASE_SECRET_KEY", key);
     const endpoint = new URL("/rest/v1/logs", url);
     endpoint.search = new URLSearchParams(params);
     const res = await fetch(endpoint, {
       method,
       signal: AbortSignal.timeout(10000),
       // New-style sb_secret_ keys go in apikey, not in Authorization
-      headers: { apikey: key, "Content-Type": "application/json", Prefer: "return=representation" },
+      headers: { apikey, "Content-Type": "application/json", Prefer: "return=representation" },
       body: body && JSON.stringify(body),
     });
     if (!res.ok) {
