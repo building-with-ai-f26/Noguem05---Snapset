@@ -34,6 +34,7 @@
 5. **Zero secrets in code:** Never hardcode API keys, tokens, or credentials. Always read from environment variables (`.env`) and update `.env.example` when new variables are needed.
 6. **Stop when looping:** If a fix fails twice in a row, stop, summarize what failed, and ask the human before trying a third approach.
 7. **Never let a test wait forever:** give every browser and network step a timeout. Test uploads with an image made inside the page, not the file picker. *(Real mistake, Build 2 on 2026-11-15: the agent's browser test froze at the step that attached a photo and had to be stopped.)*
+8. **Live-only failures:** When something works locally but fails on the live site, check the Render logs first, and double-check environment variable values for typos.
 
 ## 4. Ask Me First
 Stop and get the human's explicit OK, each time, before:
