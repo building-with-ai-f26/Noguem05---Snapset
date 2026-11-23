@@ -178,6 +178,13 @@
       <p><strong>The painful "Before" workflow:</strong> Searching manually through long, confusing exercise lists in subscription-gated apps, losing track of progressive overload weights, or relying on chaotic phone notes apps between sets.</p>
       <p><strong>The "After" workflow with this product:</strong> Taking one quick photo per machine to automatically identify the equipment and target muscle group, with my last weight already filled in, then tapping "Same again" once per set and moving on.</p>
       <p><strong>PRD v2 changes (Build 2, from pod feedback):</strong> One photo per machine, not per set. Every set after that is one tap ("Same again"), and the weight is prefilled from last time so I only type when something changes.</p>
+      <p><strong>PRD v3 changes (Build 3, going live):</strong></p>
+      <ul>
+        <li><strong>Hosting:</strong> Render's free plan. It sleeps when nobody uses it, so the first visit can take about a minute.</li>
+        <li><strong>Database:</strong> Supabase's free plan. Only my server can reach it, using a secret key. Row Level Security is on, and the public key can't read or change anything.</li>
+        <li><strong>Accounts:</strong> no sign-in. Each phone gets its own private log, and a log code opens the same log on another device.</li>
+        <li><strong>Security:</strong> per-visitor rate limits on the photo and saving routes, a daily photo cap for the whole app, and a $1 spending cap on the AI key. All keys stay on the server.</li>
+      </ul>
 
       <h3>2. Scope & Explicit Non-Goals</h3>
       <ul>
@@ -189,7 +196,7 @@
 
       <h3>3. How It Works Under the Hood & Riskiest Assumption (Week 2+)</h3>
       <p><strong>Riskiest Assumption:</strong> Ensuring the AI vision model can reliably and accurately distinguish between similar-looking gym cable and pin-load machines from a standard gym-floor photo.</p>
-      <p><strong>Simple Architecture:</strong> [User Uploads Machine Photo] → [Local Web App / Agent] → [AI Vision Model] → [Identified Machine & Log Form Output]</p>
+      <p><strong>Simple Architecture:</strong> [Phone photo of a machine] → [SnapSet server on Render] → [AI vision model via OpenRouter] → [Identified machine & log form] → [Sets saved in Supabase, private to each phone]</p>
       <p><strong>Known Issues:</strong></p>
       <ul>
         <li>One machine can be used for several exercises (like a cable machine), but the app treats each machine as one exercise.</li>
@@ -246,11 +253,20 @@
       </div>
 
       <div class="log-entry">
-        <h3>Build 3 · Build.exe: The Core Workflow (Due Nov 23)</h3>
+        <h3>Build 3 · Go Live & Security Audit (Due Nov 23)</h3>
         <ul>
-          <li><strong>What shipped:</strong> [End-to-end workflow working with real inputs + PostHog funnel events]</li>
+          <li><strong>What shipped:</strong>
+            <ul>
+              <li>SnapSet is live at <a href="https://noguem05-snapset.onrender.com">noguem05-snapset.onrender.com</a> and works on a phone over mobile data.</li>
+              <li>Workout logs moved from a file on my laptop to a Supabase database. My server is the only thing that talks to it, and the browser never does.</li>
+              <li>Each phone gets its own private log with no sign-in, and a log code opens the same log on another device.</li>
+              <li>Rate limits (10 photos and 20 changes a minute per visitor) return 429 when someone goes over.</li>
+              <li>PostHog and session replay work on the live site, with typed text hidden.</li>
+              <li>A security audit found and fixed 10 issues. Full results are in <a href="https://github.com/building-with-ai-f26/Noguem05---Snapset/blob/main/SECURITY.md">SECURITY.md</a>.</li>
+            </ul>
+          </li>
           <li><strong>What broke / changed in PRD:</strong> Photo ID failed on the live site because of a one-letter typo in a Render environment variable (OPENROUTER_MODEL said deepseek-v4.1-flas instead of deepseek-v4.1-flash). I found it by reading Render's logs, fixed the value, and redeployed.</li>
-          <li><strong>Cost & time this week:</strong> $[0.00] · [0] hours</li>
+          <li><strong>Cost & time this week:</strong> $0.0015 (OpenRouter; Render and Supabase free; $0.029 total so far) · 6 hours</li>
         </ul>
       </div>
 
