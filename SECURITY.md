@@ -3,7 +3,7 @@
 - **App:** https://noguem05-snapset.onrender.com
 - **Audit date:** Sunday, November 22, 2026 (New York time)
 - **Who did what:** the builder created the accounts, pasted the keys and approved database writes and paid calls. The coding agent (Claude Code) wrote the fixes and ran the tests below.
-- **Status: in progress.** "PASS" means it was run and the result was seen. Anything else says "OPEN".
+- **Status: complete for Build 3**, except a classmate's test run. "PASS" means it was run and the result was seen. Anything else says "OPEN".
 
 ## Summary
 
@@ -18,13 +18,13 @@
 | Public key can't insert or delete from a browser console | PASS at 5:28 PM: both `401`, permission denied, database unchanged | [4](#4-database-lockdown) |
 | 30 fast calls get 429 (photo route and writes) | PASS on the live site | [5](#5-rate-limits) |
 | Faked IP headers don't bypass the limit | PASS on the live site | [5](#5-rate-limits) |
-| Two networks get separate limits | OPEN: needs a second network | [5](#5-rate-limits) |
+| Two networks get separate limits | PASS: a phone on mobile data loaded normally while the laptop was blocked | [5](#5-rate-limits) |
 | Try to break the app | PASS after the fixes | [6](#6-break-it-tests) |
-| PostHog events and replay are accepted from the live site | PASS for delivery. Playback not yet watched. | [7](#7-analytics-privacy) |
+| PostHog events and replay work on the live site | PASS: builder watched the phone visit's replay. Typed code starred out, log-code card hidden. | [7](#7-analytics-privacy) |
 | Replay privacy fix | PASS on the live site at 3:52 PM | [7](#7-analytics-privacy) |
 | Key redaction in server logs | PASS in tests. Deployed with the 3:51 PM manual deploy of the latest commit (not probed live: that would need a broken key). | [8](#8-what-was-found) |
 | Photo ID works on the live site | PASS at 4:53 PM: a leg press photo was identified as Leg Press (Quads, glutes). Two earlier calls returned 502. | [8](#8-what-was-found) |
-| Full workflow on a phone | OPEN: builder and classmate to test | |
+| Full workflow on a phone | PASS for the builder on mobile data: log code, history, snap and log. A classmate's run is OPEN. | |
 
 ## How it is protected
 
@@ -133,6 +133,7 @@ Live results at 3:41 PM:
 | Reads while writes were blocked | `200` |
 | After the limit, faked `X-Forwarded-For`, `X-Real-IP`, `True-Client-IP`, `Forwarded`, `CF-Connecting-IPv6`, `CF-Pseudo-IPv4`, `X-Client-IP` | `429` every time |
 | Faked `CF-Connecting-IP` | `403` from Cloudflare |
+| Two networks, 5:50 PM: the laptop kept its read limit used up (`429` from 5:50:41, with brief resets each minute) while the builder refreshed on a phone on mobile data | The phone loaded normally both times |
 
 The database fingerprint and OpenRouter usage were the same before and after.
 
@@ -163,6 +164,7 @@ The secret scan and the owner-history check were repeated on the 3:51 PM deploy:
 - Inputs are masked, and console, request-body and header capture are off in the page code.
 - The log-code card is excluded from capture. Fake codes, shown and typed, were absent from what PostHog captured.
 - Retest after the fix was deployed (3:52 PM): a weight typed but not logged was absent from what PostHog captured. Before the fix it was present.
+- The builder watched the replay of their own phone visit: the page was recorded, the typed log code showed as stars, and the log-code card showed as "hidden from recording".
 - Still visible by design: logged sets on screen in replay, and machine, reps and weight in the `set_logged` event.
 
 ## 8. What was found
